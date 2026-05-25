@@ -1,9 +1,11 @@
+import { useRef } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { ArrowLeft, AlertCircle } from 'lucide-react'
 import { useOrderById, useCancelOrder } from '../hooks/useOrders'
 import { OrderTimeline } from '../components/OrderTimeline'
 import { useOrderHistory } from '../hooks/useOrders'
 import { LoadingSpinner } from '@/shared/components/LoadingSpinner'
+import { ConfirmModal } from '@/shared/components/ConfirmModal'
 
 const statusLabels: Record<string, string> = {
   PENDIENTE: 'Pendiente',
@@ -20,6 +22,17 @@ export function OrderDetailPage() {
   const { data: order, isLoading, isError } = useOrderById(orderId)
   const { data: history } = useOrderHistory(orderId)
   const cancelMutation = useCancelOrder()
+
+  
+  const confirmCancelRef = useRef<HTMLDialogElement>(null)
+
+  function handleCancelClick() {
+    confirmCancelRef.current?.showModal()
+  }
+
+  function handleConfirmCancel() {
+    cancelMutation.mutate(order!.id)
+  }
 
   if (isLoading) return <LoadingSpinner />
   if (isError || !order) {
@@ -114,11 +127,7 @@ export function OrderDetailPage() {
           )}
           {canCancel && (
             <button
-              onClick={() => {
-                if (window.confirm('¿Estás seguro de cancelar este pedido?')) {
-                  cancelMutation.mutate(order.id)
-                }
-              }}
+              onClick={handleCancelClick}
               disabled={cancelMutation.isPending}
               className="w-full bg-danger/10 text-danger font-sans font-bold uppercase tracking-wider text-sm py-3 rounded-sm hover:bg-danger/20 transition-colors disabled:opacity-50"
             >
@@ -127,6 +136,26 @@ export function OrderDetailPage() {
           )}
         </div>
       </div>
+
+      {/* ── Modal de confirmación para cancelar pedido ─────────────── */}
+      <ConfirmModal
+        dialogRef={confirmCancelRef}
+        title="Cancelar pedido"
+        message={
+          <>
+            ¿Estás seguro de cancelar el pedido{' '}
+            <strong className="text-rb-bone">#{order.id}</strong>?
+            <br />
+            <span className="text-rb-bone/50 text-[13px] mt-1 block">
+              Esta acción es irreversible.
+            </span>
+          </>
+        }
+        confirmLabel="Cancelar pedido"
+        onConfirm={handleConfirmCancel}
+        onCancel={() => confirmCancelRef.current?.close()}
+        isPending={cancelMutation.isPending}
+      />
     </div>
   )
 }

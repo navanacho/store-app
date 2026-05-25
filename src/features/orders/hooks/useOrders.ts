@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { getOrders, getOrderById, createOrder, cancelOrder, getOrderHistory } from '../services/orderService'
 import type { CreateOrderDto } from '../types'
+import { extractErrorMessage, toast } from '@/shared/lib/toast'
 
 export function useOrders() {
   return useQuery({
@@ -33,7 +34,10 @@ export function useCancelOrder() {
     mutationFn: (id: number) => cancelOrder(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['orders'] })
+      toast.success('Pedido cancelado')
     },
+    onError: (err) =>
+      toast.error('No se pudo cancelar el pedido', extractErrorMessage(err)),
   })
 }
 
