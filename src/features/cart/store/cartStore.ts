@@ -2,18 +2,23 @@ import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import type { CartItem } from '../types'
 
+type ShippingOption = 'delivery' | 'pickup'
+
 interface CartState {
   items: CartItem[]
+  shippingOption: ShippingOption
   addItem: (item: Omit<CartItem, 'quantity'> & { quantity?: number }) => void
   removeItem: (productId: number) => void
   updateQuantity: (productId: number, quantity: number) => void
   clearCart: () => void
+  setShippingOption: (option: ShippingOption) => void
 }
 
 export const useCartStore = create<CartState>()(
   persist(
     (set, get) => ({
       items: [],
+      shippingOption: 'delivery',
       addItem: (item) => {
         const existing = get().items.find((i) => i.id === item.id)
         if (existing) {
@@ -33,7 +38,8 @@ export const useCartStore = create<CartState>()(
             ? get().items.filter((i) => i.id !== productId)
             : get().items.map((i) => (i.id === productId ? { ...i, quantity } : i)),
         }),
-      clearCart: () => set({ items: [] }),
+      clearCart: () => set({ items: [], shippingOption: 'delivery' }),
+      setShippingOption: (option) => set({ shippingOption: option }),
     }),
     { name: 'rb-cart-storage' },
   ),

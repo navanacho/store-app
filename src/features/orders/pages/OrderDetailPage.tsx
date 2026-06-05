@@ -2,6 +2,7 @@ import { useRef } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { ArrowLeft, AlertCircle } from 'lucide-react'
 import { useOrderById, useCancelOrder } from '../hooks/useOrders'
+import { useOrderWebSocket } from '../hooks/useOrderWebSocket'
 import { OrderTimeline } from '../components/OrderTimeline'
 import { useOrderHistory } from '../hooks/useOrders'
 import { LoadingSpinner } from '@/shared/components/LoadingSpinner'
@@ -11,7 +12,7 @@ const statusLabels: Record<string, string> = {
   PENDIENTE: 'Pendiente',
   CONFIRMADO: 'Confirmado',
   EN_PREP: 'En preparación',
-  EN_CAMINO: 'En camino',
+  LISTO: 'Listo',
   ENTREGADO: 'Entregado',
   CANCELADO: 'Cancelado',
 }
@@ -23,6 +24,8 @@ export function OrderDetailPage() {
   const { data: history } = useOrderHistory(orderId)
   const cancelMutation = useCancelOrder()
 
+  // Recibir actualizaciones en tiempo real del pedido
+  useOrderWebSocket(orderId ? [orderId] : undefined)
   
   const confirmCancelRef = useRef<HTMLDialogElement>(null)
 

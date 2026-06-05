@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { ShoppingBag, Loader2 } from 'lucide-react'
 import { useCartStore } from '@/features/cart/store/cartStore'
 import { useCreateOrder } from '../hooks/useOrders'
+import { useShippingConfig } from '../hooks/useShippingConfig'
 import { useAddresses, useCreateAddress } from '@/features/addresses/hooks/useAddresses'
 import { useQuery } from '@tanstack/react-query'
 import { apiClient } from '@/shared/lib/axios'
@@ -22,8 +23,9 @@ interface ListResponse<T> {
 
 export function CheckoutPage() {
   const navigate = useNavigate()
-  const { items, clearCart } = useCartStore()
+  const { items, clearCart, shippingOption } = useCartStore()
   const createOrderMutation = useCreateOrder()
+  const { data: shippingConfig } = useShippingConfig()
   const { data: addresses, isLoading: addressesLoading } = useAddresses()
   const createAddressMutation = useCreateAddress()
 
@@ -46,8 +48,10 @@ export function CheckoutPage() {
     provincia: '',
     codigo_postal: '',
   })
-
   const total = items.reduce((sum, item) => sum + Number(item.price) * item.quantity, 0)
+  // Display value — el backend es la fuente de verdad
+  const costoEnvio = shippingOption === 'delivery' ? (shippingConfig?.delivery ?? 0) : 0
+  const totalWithShipping = total + costoEnvio
 
   const handleCreateAddress = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -61,12 +65,15 @@ export function CheckoutPage() {
   }
 
   const handleConfirmOrder = () => {
-    if (!selectedAddressId || !selectedPaymentId) return
+    if (!selectedPaymentId) return
+    // Delivery requiere dirección, pickup no
+    if (shippingOption === 'delivery' && !selectedAddressId) return
 
     createOrderMutation.mutate(
       {
-        direccion_entrega_id: selectedAddressId,
+        direccion_entrega_id: shippingOption === 'delivery' ? selectedAddressId! : (selectedAddressId ?? 1),
         forma_pago_id: selectedPaymentId,
+        tipo_envio: shippingOption,
         detalles: items.map((i) => ({ producto_id: i.id, cantidad: i.quantity })),
       },
       {
@@ -101,12 +108,23 @@ export function CheckoutPage() {
               <span className="text-on-surface">${(Number(item.price) * item.quantity).toFixed(2)}</span>
             </div>
           ))}
-          <div className="border-t border-outline-variant/30 pt-2 mt-2 flex justify-between font-bold">
-            <span>Total</span>
-            <span>${total.toFixed(2)}</span>
+          <div className="border-t border-outline-variant/30 pt-2 mt-2 space-y-1">
+            <div className="flex justify-between text-sm">
+              <span className="text-on-surface-variant">Subtotal</span>
+              <span className="text-on-surface">${total.toFixed(2)}</span>
+            </div>
+            <div className="flex justify-between text-sm">
+              <span className="text-on-surface-variant">Envío</span>
+              <span className="text-on-surface">{costoEnvio === 0 ? 'Gratis' : `$${costoEnvio.toFixed(2)}`}</span>
+            </div>
+            <div className="flex justify-between font-bold text-on-surface pt-2 border-t border-outline-variant/30">
+              <span>Total</span>
+              <span>${totalWithShipping.toFixed(2)}</span>
+            </div>
           </div>
         </div>
 
+        {shippingOption === 'delivery' && (
         <div className="bg-surface rounded-sm p-4">
           <h3 className="font-sans font-bold text-on-surface mb-3">Dirección de entrega</h3>
           {addressesLoading ? (
@@ -209,6 +227,7 @@ export function CheckoutPage() {
             </form>
           )}
         </div>
+        )}
 
         <div className="bg-surface rounded-sm p-4">
           <h3 className="font-sans font-bold text-on-surface mb-3">Forma de pago</h3>
@@ -237,7 +256,7 @@ export function CheckoutPage() {
 
         <button
           onClick={handleConfirmOrder}
-          disabled={!selectedAddressId || !selectedPaymentId || createOrderMutation.isPending}
+          disabled={!selectedPaymentId || (shippingOption === 'delivery' && !selectedAddressId) || createOrderMutation.isPending}
           className="w-full bg-rb-red text-white font-sans font-bold uppercase tracking-wider py-4 rounded-sm hover:bg-rb-red-hover transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-red flex items-center justify-center gap-2"
         >
           {createOrderMutation.isPending ? (

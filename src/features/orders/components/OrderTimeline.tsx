@@ -9,7 +9,7 @@ const statusLabels: Record<string, string> = {
   PENDIENTE: 'Pedido recibido',
   CONFIRMADO: 'Confirmado',
   EN_PREP: 'En preparación',
-  EN_CAMINO: 'En camino',
+  LISTO: 'Listo',
   ENTREGADO: 'Entregado',
   CANCELADO: 'Cancelado',
 }

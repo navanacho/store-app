@@ -6,7 +6,7 @@ const statusColors: Record<string, string> = {
   PENDIENTE: 'bg-warning/20 text-warning',
   CONFIRMADO: 'bg-blue-100 text-blue-700',
   EN_PREP: 'bg-orange-100 text-orange-700',
-  EN_CAMINO: 'bg-sky-100 text-sky-700',
+  LISTO: 'bg-green-100 text-green-700',
   ENTREGADO: 'bg-success/20 text-success',
   CANCELADO: 'bg-danger/20 text-danger',
 }

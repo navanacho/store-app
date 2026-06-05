@@ -37,5 +37,6 @@ export interface CreateOrderDto {
   direccion_entrega_id: number
   forma_pago_id: number
   notas_cliente?: string
+  tipo_envio: 'delivery' | 'pickup'
   detalles: { producto_id: number; cantidad: number }[]
 }
