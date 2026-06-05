@@ -1,4 +1,5 @@
 import { useOrders } from '../hooks/useOrders'
+import { useOrderWebSocket } from '../hooks/useOrderWebSocket'
 import { OrderCard } from '../components/OrderCard'
 import { LoadingSpinner } from '@/shared/components/LoadingSpinner'
 import { PageHeader } from '@/shared/components/PageHeader'
@@ -7,6 +8,7 @@ import { PackageOpen } from 'lucide-react'
 
 export function OrdersPage() {
   const { data: orders, isLoading, isError } = useOrders()
+  useOrderWebSocket(orders?.map((o) => o.id))
 
   if (isLoading) return <LoadingSpinner />
 
