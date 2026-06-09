@@ -12,6 +12,8 @@ import { RegisterPage } from '@/features/auth/pages/RegisterPage'
 import { OrdersPage } from '@/features/orders/pages/OrdersPage'
 import { OrderDetailPage } from '@/features/orders/pages/OrderDetailPage'
 import { CheckoutPage } from '@/features/orders/pages/CheckoutPage'
+import { SuccessPage } from '@/features/orders/pages/SuccessPage'
+import { FailurePage } from '@/features/orders/pages/FailurePage'
 import { AddressesPage } from '@/features/addresses/pages/AddressesPage'
 import { ProtectedRoute } from './ProtectedRoute'
 
@@ -45,6 +47,8 @@ export const router = createBrowserRouter([
           { path: 'checkout', element: <CheckoutPage /> },
           { path: 'orders', element: <OrdersPage /> },
           { path: 'orders/:id', element: <OrderDetailPage /> },
+          { path: 'orders/:id/success', element: <SuccessPage /> },
+          { path: 'orders/:id/failure', element: <FailurePage /> },
           { path: 'addresses', element: <AddressesPage /> },
         ],
       },

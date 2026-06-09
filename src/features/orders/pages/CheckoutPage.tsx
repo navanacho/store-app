@@ -5,8 +5,9 @@ import { useCartStore } from '@/features/cart/store/cartStore'
 import { useCreateOrder } from '../hooks/useOrders'
 import { useShippingConfig } from '../hooks/useShippingConfig'
 import { useAddresses, useCreateAddress } from '@/features/addresses/hooks/useAddresses'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useMutation } from '@tanstack/react-query'
 import { apiClient } from '@/shared/lib/axios'
+import { toast, extractErrorMessage } from '@/shared/lib/toast'
 import { LoadingSpinner } from '@/shared/components/LoadingSpinner'
 import type { CreateAddressDto } from '@/features/addresses/types'
 
@@ -29,6 +30,15 @@ export function CheckoutPage() {
   const { data: addresses, isLoading: addressesLoading } = useAddresses()
   const createAddressMutation = useCreateAddress()
 
+  const createPreferenceMutation = useMutation({
+    mutationFn: (pedidoId: number) =>
+      apiClient.post('/pagos/create-preference', { pedido_id: pedidoId }).then(r => r.data),
+    onError: (err) => {
+      toast.error('Error al conectar con MercadoPago', extractErrorMessage(err))
+      setRedirecting(false)
+    },
+  })
+
   const { data: paymentMethods } = useQuery<PaymentMethod[]>({
     queryKey: ['payment-methods'],
     queryFn: async () => {
@@ -40,6 +50,8 @@ export function CheckoutPage() {
   const [selectedAddressId, setSelectedAddressId] = useState<number | null>(null)
   const [selectedPaymentId, setSelectedPaymentId] = useState<number | null>(null)
   const [showAddressForm, setShowAddressForm] = useState(false)
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [redirecting, setRedirecting] = useState(false)
   const [newAddress, setNewAddress] = useState<CreateAddressDto>({
     alias: '',
     calle: '',
@@ -66,9 +78,13 @@ export function CheckoutPage() {
 
   const handleConfirmOrder = () => {
     if (!selectedPaymentId) return
-    // Delivery requiere dirección, pickup no
     if (shippingOption === 'delivery' && !selectedAddressId) return
 
+    const selectedMethod = paymentMethods?.find(p => p.id === selectedPaymentId)
+    const isMercadoPago = selectedMethod?.nombre?.toLowerCase().includes('mercadopago') ||
+                          selectedMethod?.nombre?.toLowerCase().includes('mercado pago')
+
+    setIsSubmitting(true)
     createOrderMutation.mutate(
       {
         direccion_entrega_id: shippingOption === 'delivery' ? selectedAddressId! : (selectedAddressId ?? 1),
@@ -79,7 +95,18 @@ export function CheckoutPage() {
       {
         onSuccess: (order) => {
           clearCart()
-          navigate(`/orders/${order.id}`)
+          if (isMercadoPago) {
+            setRedirecting(true)
+            createPreferenceMutation.mutate(order.id, {
+              onSuccess: (data) => {
+                if (data.init_point) {
+                  window.location.href = data.init_point
+                }
+              },
+            })
+          } else {
+            navigate(`/orders/${order.id}`)
+          }
         },
       },
     )
@@ -256,13 +283,13 @@ export function CheckoutPage() {
 
         <button
           onClick={handleConfirmOrder}
-          disabled={!selectedPaymentId || (shippingOption === 'delivery' && !selectedAddressId) || createOrderMutation.isPending}
+          disabled={!selectedPaymentId || (shippingOption === 'delivery' && !selectedAddressId) || createOrderMutation.isPending || redirecting}
           className="w-full bg-rb-red text-white font-sans font-bold uppercase tracking-wider py-4 rounded-sm hover:bg-rb-red-hover transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-red flex items-center justify-center gap-2"
         >
-          {createOrderMutation.isPending ? (
+          {createOrderMutation.isPending || redirecting ? (
             <Loader2 className="w-5 h-5 animate-spin" />
           ) : null}
-          {createOrderMutation.isPending ? 'Procesando...' : 'Confirmar pedido'}
+          {redirecting ? 'Redirigiendo a MercadoPago...' : createOrderMutation.isPending ? 'Procesando...' : 'Confirmar pedido'}
         </button>
 
         {createOrderMutation.isError && (

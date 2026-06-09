@@ -2,6 +2,7 @@ import { useEffect } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { useAuthStore } from '@/features/auth/store/authStore'
 import { getApiBase } from '@/shared/lib/config'
+import { toast } from '@/shared/lib/toast'
 
 // ── Tipos ────────────────────────────────────────────────────────────
 type WsListener = (event: string, data: unknown) => void
@@ -14,6 +15,7 @@ class OrderSocketManager {
   private ws: WebSocket | null = null
   private trackedOrders: Set<number> = new Set()
   private listeners: Set<WsListener> = new Set()
+  private closeListeners: Set<(code: number, reason: string) => void> = new Set()
   private refCount = 0
   private reconnectAttempt = 0
   private readonly MAX_RETRIES = 5
@@ -60,6 +62,11 @@ class OrderSocketManager {
     return () => { this.listeners.delete(fn) }
   }
 
+  addCloseListener(fn: (code: number, reason: string) => void): () => void {
+    this.closeListeners.add(fn)
+    return () => { this.closeListeners.delete(fn) }
+  }
+
   /** Expone los IDs trackeados para que el hook pueda hacer diff. */
   getTrackedIds(): Set<number> {
     return this.trackedOrders
@@ -102,6 +109,14 @@ class OrderSocketManager {
 
     this.ws.onclose = (e: CloseEvent) => {
       console.log(`[WS] Cerrado - codigo: ${e.code}, motivo: "${e.reason}", limpio: ${e.wasClean}`)
+      this.closeListeners.forEach((l) => l(e.code, e.reason))
+      // Código 1008 = token inválido/expirado, no reconectar
+      if (e.code === 1008) {
+        console.log('[WS] Token inválido/expirado — no se reconecta')
+        this.refCount = 0
+        this.trackedOrders.clear()
+        return
+      }
       // Si todavía hay interesados, reconectar con backoff
       if (this.refCount > 0) this.scheduleReconnect()
     }
@@ -180,23 +195,50 @@ export function useOrderWebSocket(orderIds?: number[]) {
     console.log('[WS Hook] Montando, conectando...')
     socketManager.connect()
 
+    // ── Listener de mensajes ────────────────────────────────────────
     const removeListener = socketManager.addListener((event, data) => {
       console.log('[WS Hook] Evento recibido:', event, data)
-      if (event === 'PEDIDO_ESTADO' && data && typeof data === 'object' && 'id' in data) {
-        const orderData = data as { id: number }
-        console.log('[WS Hook] Actualizando cache para pedido:', orderData.id)
-        // Actualizar cache del detalle sin hacer un nuevo request
-        queryClient.setQueryData(['orders', orderData.id], data)
-        // Forzar refetch del historial (podría haber cambiado)
-        queryClient.invalidateQueries({ queryKey: ['orders', orderData.id, 'history'] })
-        // Forzar refetch de la lista por si cambió el estado
-        queryClient.invalidateQueries({ queryKey: ['orders'] })
+
+      switch (event) {
+        case 'PEDIDO_ESTADO':
+          if (data && typeof data === 'object' && 'id' in data) {
+            const orderData = data as { id: number }
+            console.log('[WS Hook] Actualizando cache para pedido:', orderData.id)
+            queryClient.setQueryData(['orders', orderData.id], data)
+            queryClient.invalidateQueries({ queryKey: ['orders', orderData.id, 'history'] })
+            queryClient.invalidateQueries({ queryKey: ['orders'] })
+          }
+          break
+
+        case 'SUBSCRIBED':
+          console.log('[WS Hook] Suscripción confirmada:', data)
+          break
+
+        case 'ERROR': {
+          const detail =
+            data && typeof data === 'object' && 'detail' in data
+              ? (data as { detail: string }).detail
+              : 'Error desconocido del servidor'
+          console.error('[WS Hook] Error del servidor:', detail)
+          toast.error(detail)
+          break
+        }
+      }
+    })
+
+    // ── Listener de cierre ──────────────────────────────────────────
+    const removeCloseListener = socketManager.addCloseListener((code) => {
+      if (code === 1008) {
+        console.log('[WS Hook] Sesión expirada (1008), redirigiendo al login...')
+        useAuthStore.getState().logout()
+        window.location.href = '/login'
       }
     })
 
     return () => {
       console.log('[WS Hook] Desmontando, desconectando...')
       removeListener()
+      removeCloseListener()
       socketManager.disconnect()
     }
   }, [isAuthenticated, queryClient])

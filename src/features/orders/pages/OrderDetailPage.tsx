@@ -34,7 +34,11 @@ export function OrderDetailPage() {
   }
 
   function handleConfirmCancel() {
-    cancelMutation.mutate(order!.id)
+    cancelMutation.mutate(order!.id, {
+      onSuccess: () => {
+        confirmCancelRef.current?.close()
+      },
+    })
   }
 
   if (isLoading) return <LoadingSpinner />
