@@ -1,179 +1,18 @@
-import { useEffect } from 'react'
-import { useQueryClient } from '@tanstack/react-query'
-import { useAuthStore } from '@/features/auth/store/authStore'
-import { getApiBase } from '@/shared/lib/config'
-import { toast } from '@/shared/lib/toast'
+import { useEffect, useRef, useCallback } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { useAuthStore } from "@/features/auth/store/authStore";
+import { useWebSocket } from "@/shared/hooks/useWebSocket";
+import type { WsMessage } from "@/shared/hooks/useWebSocket";
+import { toast } from "@/shared/lib/toast";
 
-// ── Tipos ────────────────────────────────────────────────────────────
-type WsListener = (event: string, data: unknown) => void
-
-// ── Singleton: WebSocket manager ─────────────────────────────────────
-// Una sola conexión compartida entre todos los componentes. Se conecta
-// cuando el primer componente la necesita y se cierra cuando el último
-// se desmonta.
-class OrderSocketManager {
-  private ws: WebSocket | null = null
-  private trackedOrders: Set<number> = new Set()
-  private listeners: Set<WsListener> = new Set()
-  private closeListeners: Set<(code: number, reason: string) => void> = new Set()
-  private refCount = 0
-  private reconnectAttempt = 0
-  private readonly MAX_RETRIES = 5
-  private reconnectTimer: ReturnType<typeof setTimeout> | null = null
-
-  private get url(): string {
-    const base = getApiBase().replace(/^http/, 'ws')
-    const wsUrl = `${base}/pedidos/ws`
-    console.log('[WS] URL:', wsUrl)
-    return wsUrl
-  }
-
-  /** Incrementa el contador de uso y abre la conexión si es la primera vez. */
-  connect() {
-    this.refCount++
-    if (this.ws && (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING)) {
-      return
-    }
-    this.open()
-  }
-
-  /** Decrementa el contador; cierra la conexión si ya nadie la necesita. */
-  disconnect() {
-    this.refCount = Math.max(0, this.refCount - 1)
-    if (this.refCount === 0) this.close()
-  }
-
-  subscribe(orderId: number) {
-    if (this.trackedOrders.has(orderId)) return
-    console.log('[WS] Subscribe a pedido:', orderId)
-    this.trackedOrders.add(orderId)
-    this.send({ action: 'subscribe-order', order_id: orderId })
-  }
-
-  unsubscribe(orderId: number) {
-    if (!this.trackedOrders.has(orderId)) return
-    console.log('[WS] Unsubscribe de pedido:', orderId)
-    this.trackedOrders.delete(orderId)
-    this.send({ action: 'unsubscribe-order', order_id: orderId })
-  }
-
-  addListener(fn: WsListener): () => void {
-    this.listeners.add(fn)
-    return () => { this.listeners.delete(fn) }
-  }
-
-  addCloseListener(fn: (code: number, reason: string) => void): () => void {
-    this.closeListeners.add(fn)
-    return () => { this.closeListeners.delete(fn) }
-  }
-
-  /** Expone los IDs trackeados para que el hook pueda hacer diff. */
-  getTrackedIds(): Set<number> {
-    return this.trackedOrders
-  }
-
-  // ── Privado ──────────────────────────────────────────────────────
-
-  private open() {
-    this.cleanupTimer()
-    if (this.ws) {
-      this.ws.onclose = null
-      this.ws.onmessage = null
-      this.ws.onopen = null
-      if (this.ws.readyState !== WebSocket.CLOSED) this.ws.close()
-    }
-
-    console.log('[WS] Conectando a:', this.url)
-    this.ws = new WebSocket(this.url)
-
-    this.ws.onopen = () => {
-      console.log('[WS] Conectado exitosamente')
-      this.reconnectAttempt = 0
-      // Re-suscribir todos los pedidos que se estuvieran siguiendo
-      const ids = [...this.trackedOrders]
-      console.log('[WS] Re-suscribiendo pedidos:', ids)
-      ids.forEach((id) =>
-        this.ws?.send(JSON.stringify({ action: 'subscribe-order', order_id: id })),
-      )
-    }
-
-    this.ws.onmessage = (event) => {
-      try {
-        const msg = JSON.parse(event.data) as { event: string; data: unknown }
-        console.log('[WS] Mensaje recibido:', msg.event, msg.data)
-        this.listeners.forEach((l) => l(msg.event, msg.data))
-      } catch {
-        console.warn('[WS] Mensaje malformado:', event.data)
-      }
-    }
-
-    this.ws.onclose = (e: CloseEvent) => {
-      console.log(`[WS] Cerrado - codigo: ${e.code}, motivo: "${e.reason}", limpio: ${e.wasClean}`)
-      this.closeListeners.forEach((l) => l(e.code, e.reason))
-      // Código 1008 = token inválido/expirado, no reconectar
-      if (e.code === 1008) {
-        console.log('[WS] Token inválido/expirado — no se reconecta')
-        this.refCount = 0
-        this.trackedOrders.clear()
-        return
-      }
-      // Si todavía hay interesados, reconectar con backoff
-      if (this.refCount > 0) this.scheduleReconnect()
-    }
-
-    this.ws.onerror = (e: Event) => {
-      console.error('[WS] Error en la conexion:', e)
-    }
-  }
-
-  private close() {
-    this.cleanupTimer()
-    // NO limpiar trackedOrders — el onopen() los re-suscribe si hace falta.
-    // Si los limpiamos acá, en StrictMode se pierden entre el unmount y remount.
-    if (this.ws) {
-      this.ws.onclose = null
-      this.ws.onmessage = null
-      this.ws.onopen = null
-      this.ws.close()
-      this.ws = null
-    }
-  }
-
-  private send(data: unknown) {
-    if (this.ws?.readyState === WebSocket.OPEN) {
-      this.ws.send(JSON.stringify(data))
-    }
-  }
-
-  private scheduleReconnect() {
-    if (this.reconnectAttempt >= this.MAX_RETRIES) return
-    this.reconnectAttempt++
-    const delay = Math.min(1000 * 2 ** (this.reconnectAttempt - 1), 16_000)
-    this.reconnectTimer = setTimeout(() => {
-      if (this.refCount > 0) this.open()
-    }, delay)
-  }
-
-  private cleanupTimer() {
-    if (this.reconnectTimer) {
-      clearTimeout(this.reconnectTimer)
-      this.reconnectTimer = null
-    }
-  }
-}
-
-// Módulo singleton
-const socketManager = new OrderSocketManager()
-
-// ── Hook público ─────────────────────────────────────────────────────
 /**
  * Conecta al WebSocket de pedidos y se suscribe a los `orderIds` indicados.
  *
- * - Cuando llega un `PEDIDO_ESTADO`, actualiza la cache de React Query
- *   tanto del detalle (`['orders', id]`) como invalida la lista (`['orders']`)
- *   y el historial (`['orders', id, 'history']`).
- * - Si no se pasa ningún `orderIds`, igual se conecta (para recibir eventos
- *   de suscripciones hechas desde otros hooks).
+ * Usa el hook useWebSocket (compartido con admin-app) que gestiona la conexión,
+ * reconexión con backoff exponencial y emite eventos sintéticos (WS_CONNECTED)
+ * para reaccionar a reconexiones.
+ *
+ * Cada llamada al hook crea su propia conexión WebSocket.
  *
  * @example
  * // En OrderDetailPage
@@ -185,79 +24,90 @@ const socketManager = new OrderSocketManager()
  * useOrderWebSocket(orders?.map(o => o.id))
  */
 export function useOrderWebSocket(orderIds?: number[]) {
-  const queryClient = useQueryClient()
-  const isAuthenticated = useAuthStore((s) => s.isAuthenticated)
+  const queryClient = useQueryClient();
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
 
-  // Conexión + listener de eventos (una sola vez por ciclo de vida)
-  useEffect(() => {
-    if (!isAuthenticated) return
+  // IDs a los que estamos actualmente suscriptos (para hacer diff).
+  const subscribedRef = useRef<Set<number>>(new Set());
+  // Últimos orderIds recibidos (para re-suscribir en reconexión).
+  const idsRef = useRef<number[]>([]);
 
-    console.log('[WS Hook] Montando, conectando...')
-    socketManager.connect()
-
-    // ── Listener de mensajes ────────────────────────────────────────
-    const removeListener = socketManager.addListener((event, data) => {
-      console.log('[WS Hook] Evento recibido:', event, data)
-
-      switch (event) {
-        case 'PEDIDO_ESTADO':
-          if (data && typeof data === 'object' && 'id' in data) {
-            const orderData = data as { id: number }
-            console.log('[WS Hook] Actualizando cache para pedido:', orderData.id)
-            queryClient.setQueryData(['orders', orderData.id], data)
-            queryClient.invalidateQueries({ queryKey: ['orders', orderData.id, 'history'] })
-            queryClient.invalidateQueries({ queryKey: ['orders'] })
+  const onMessage = useCallback(
+    (msg: WsMessage) => {
+      switch (msg.event) {
+        case "PEDIDO_ESTADO":
+          if (
+            msg.data &&
+            typeof msg.data === "object" &&
+            "id" in (msg.data as Record<string, unknown>)
+          ) {
+            const orderData = msg.data as { id: number };
+            queryClient.setQueryData(["orders", orderData.id], msg.data);
+            queryClient.invalidateQueries({
+              queryKey: ["orders", orderData.id, "history"],
+            });
+            queryClient.invalidateQueries({ queryKey: ["orders"] });
           }
-          break
+          break;
 
-        case 'SUBSCRIBED':
-          console.log('[WS Hook] Suscripción confirmada:', data)
-          break
-
-        case 'ERROR': {
+        case "ERROR": {
           const detail =
-            data && typeof data === 'object' && 'detail' in data
-              ? (data as { detail: string }).detail
-              : 'Error desconocido del servidor'
-          console.error('[WS Hook] Error del servidor:', detail)
-          toast.error(detail)
-          break
+            msg.data &&
+            typeof msg.data === "object" &&
+            "detail" in (msg.data as Record<string, unknown>)
+              ? (msg.data as { detail: string }).detail
+              : "Error desconocido del servidor";
+          toast.error(detail);
+          break;
         }
+
+        case "WS_CONNECTED":
+          // Reconexión: re-suscribir todos los pedidos activos.
+          idsRef.current.forEach((id) => subRef.current?.(id));
+          break;
       }
-    })
+    },
+    [queryClient],
+  );
 
-    // ── Listener de cierre ──────────────────────────────────────────
-    const removeCloseListener = socketManager.addCloseListener((code) => {
-      if (code === 1008) {
-        console.log('[WS Hook] Sesión expirada (1008), redirigiendo al login...')
-        useAuthStore.getState().logout()
-        window.location.href = '/login'
-      }
-    })
+  const { subscribeToOrder, unsubscribeFromOrder } = useWebSocket({
+    onMessage,
+    enabled: isAuthenticated,
+  });
 
-    return () => {
-      console.log('[WS Hook] Desmontando, desconectando...')
-      removeListener()
-      removeCloseListener()
-      socketManager.disconnect()
-    }
-  }, [isAuthenticated, queryClient])
+  // Refs para que onMessage pueda llamar a subscribeToOrder sin closure stale.
+  const subRef = useRef(subscribeToOrder);
+  const unsubRef = useRef(unsubscribeFromOrder);
 
-  // Sincronizar suscripciones: en cada cambio, calculamos el diff
-  // contra lo que ya está trackeado en el singleton.
   useEffect(() => {
-    if (!isAuthenticated) return
+    subRef.current = subscribeToOrder;
+  }, [subscribeToOrder]);
 
-    const ids = new Set(orderIds ?? [])
-    console.log('[WS Hook] Sincronizando suscripciones:', [...ids])
+  useEffect(() => {
+    unsubRef.current = unsubscribeFromOrder;
+  }, [unsubscribeFromOrder]);
 
-    // Dar de baja los que sobran
-    socketManager.getTrackedIds().forEach((id) => {
-      if (!ids.has(id)) socketManager.unsubscribe(id)
-    })
-    // Dar de alta los nuevos
+  // Sincronizar suscripciones cuando cambian los orderIds.
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    idsRef.current = orderIds ?? [];
+
+    const ids = new Set(orderIds ?? []);
+
+    // Dar de baja los que sobran.
+    subscribedRef.current.forEach((id) => {
+      if (!ids.has(id)) {
+        subscribedRef.current.delete(id);
+        unsubRef.current?.(id);
+      }
+    });
+
+    // Dar de alta los nuevos.
     ids.forEach((id) => {
-      if (!socketManager.getTrackedIds().has(id)) socketManager.subscribe(id)
-    })
-  }, [orderIds, isAuthenticated])
+      if (!subscribedRef.current.has(id)) {
+        subscribedRef.current.add(id);
+        subRef.current?.(id);
+      }
+    });
+  }, [orderIds, isAuthenticated]);
 }
