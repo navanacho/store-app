@@ -18,7 +18,7 @@ export function ProductGrid({ filters }: ProductGridProps) {
       id: product.id,
       name: product.name,
       price: Number(product.base_price),
-      image_url: product.image_url,
+      image_url: product.image_urls?.[0],
       quantity: 1,
     })
   }

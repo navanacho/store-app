@@ -4,12 +4,9 @@ export interface Product {
   description: string
   /** Decimal serializado como string por el backend */
   base_price: string
-  preparation_time?: number
-  rating?: number
-  image_url?: string
+  prep_time_min?: number
+  image_urls: string[]
   available?: boolean
-  category_id?: number
-  category_name?: string
   created_at?: string
   updated_at?: string
   categories?: { id: number; name: string; is_primary: boolean }[]

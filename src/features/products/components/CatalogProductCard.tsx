@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom'
-import { ShoppingCart, Star, Clock, ChefHat } from 'lucide-react'
+import { ShoppingCart, Clock, ChefHat } from 'lucide-react'
 import type { Product } from '../types'
 
 interface CatalogProductCardProps {
@@ -13,8 +13,8 @@ export function CatalogProductCard({ product, onAddToCart }: CatalogProductCardP
       {/* Image */}
       <Link to={`/products/${product.id}`} className="block md:w-48 shrink-0">
         <div className="aspect-[4/3] md:aspect-square bg-surface-container-high flex items-center justify-center overflow-hidden">
-          {product.image_url ? (
-            <img src={product.image_url} alt={product.name} className="w-full h-full object-cover" />
+          {product.image_urls?.[0] ? (
+            <img src={product.image_urls[0]} alt={product.name} className="w-full h-full object-cover" />
           ) : (
             <span className="text-4xl font-display text-on-surface-variant/20">RB</span>
           )}
@@ -30,18 +30,12 @@ export function CatalogProductCard({ product, onAddToCart }: CatalogProductCardP
                 {product.name}
               </h3>
             </Link>
-            {product.category_name && (
+            {product.categories?.[0] && (
               <span className="text-xs text-on-surface-variant/60 uppercase tracking-wider">
-                {product.category_name}
+                {product.categories[0].name}
               </span>
             )}
           </div>
-          {product.rating && (
-            <div className="flex items-center gap-1 text-sm text-on-surface-variant shrink-0">
-              <Star className="w-4 h-4 fill-yellow-500 text-yellow-500" />
-              {product.rating}
-            </div>
-          )}
         </div>
 
         {/* Description */}
@@ -51,10 +45,10 @@ export function CatalogProductCard({ product, onAddToCart }: CatalogProductCardP
 
         {/* Meta: ingredients + prep time */}
         <div className="flex flex-wrap items-center gap-3 mt-1">
-          {product.preparation_time && (
+          {product.prep_time_min && (
             <span className="flex items-center gap-1 text-xs text-on-surface-variant/70">
               <Clock className="w-3.5 h-3.5" />
-              {product.preparation_time} min
+              {product.prep_time_min} min
             </span>
           )}
           {product.ingredients && product.ingredients.length > 0 && (
