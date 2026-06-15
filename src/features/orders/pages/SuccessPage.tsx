@@ -7,7 +7,7 @@ import { CheckCircle, XCircle, Loader2 } from 'lucide-react'
 export function SuccessPage() {
   const { id } = useParams<{ id: string }>()
   const [searchParams] = useSearchParams()
-  const [estado, setEstado] = useState<'verificando' | 'aprobado' | 'rechazado'>('verificando')
+  const [estado, setEstado] = useState<'verificando' | 'approved' | 'rejected'>('verificando')
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
@@ -19,11 +19,11 @@ export function SuccessPage() {
       payment_id: paymentId ? Number(paymentId) : undefined,
     })
       .then(res => {
-        setEstado(res.data.estado === 'aprobado' ? 'aprobado' : 'rechazado')
+        setEstado(res.data.estado === 'approved' ? 'approved' : 'rejected')
       })
       .catch(err => {
         setError(err?.response?.data?.detail || 'Error al verificar el pago')
-        setEstado('rechazado')
+        setEstado('rejected')
       })
   }, [id, searchParams])
 
@@ -37,7 +37,7 @@ export function SuccessPage() {
         </>
       )}
 
-      {estado === 'aprobado' && (
+      {estado === 'approved' && (
         <>
           <CheckCircle className="w-16 h-16 mx-auto mb-4 text-green-500" />
           <h1 className="text-2xl font-bold mb-2">¡Pago aprobado!</h1>
@@ -50,7 +50,7 @@ export function SuccessPage() {
         </>
       )}
 
-      {estado === 'rechazado' && (
+      {estado === 'rejected' && (
         <>
           <XCircle className="w-16 h-16 mx-auto mb-4 text-red-500" />
           <h1 className="text-2xl font-bold mb-2">Pago no procesado</h1>

@@ -12,6 +12,7 @@ export default defineConfig({
     },
   },
   server: {
+    allowedHosts: ['energize-such-underage.ngrok-free.dev'],
     proxy: {
       '/api': {
         target: 'http://localhost:8000',
