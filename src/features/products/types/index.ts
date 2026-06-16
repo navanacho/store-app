@@ -7,6 +7,9 @@ export interface Product {
   prep_time_min?: number
   image_urls: string[]
   available?: boolean
+  /** Stock calculado en vivo: MIN(stock_ingredientes) para productos con receta */
+  available_stock: number
+  stock_quantity?: number
   created_at?: string
   updated_at?: string
   categories?: { id: number; name: string; is_primary: boolean }[]

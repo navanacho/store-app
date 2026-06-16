@@ -1,12 +1,13 @@
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { ShoppingBag, Loader2 } from 'lucide-react'
+import { useNavigate, Link } from 'react-router-dom'
+import { ShoppingBag, Loader2, AlertTriangle, ArrowLeft } from 'lucide-react'
 import { useCartStore } from '@/features/cart/store/cartStore'
 import { useCreateOrder } from '../hooks/useOrders'
 import { useShippingConfig } from '../hooks/useShippingConfig'
 import { useAddresses, useCreateAddress } from '@/features/addresses/hooks/useAddresses'
 import { useQuery, useMutation } from '@tanstack/react-query'
 import { apiClient } from '@/shared/lib/axios'
+import { getProductById } from '@/features/products/services/productService'
 import { toast, extractErrorMessage } from '@/shared/lib/toast'
 import { LoadingSpinner } from '@/shared/components/LoadingSpinner'
 import type { CreateAddressDto } from '@/features/addresses/types'
@@ -51,6 +52,8 @@ export function CheckoutPage() {
   const [selectedPaymentId, setSelectedPaymentId] = useState<number | null>(null)
   const [showAddressForm, setShowAddressForm] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [isValidatingStock, setIsValidatingStock] = useState(false)
+  const [stockErrors, setStockErrors] = useState<{ name: string; available: number; requested: number }[] | null>(null)
   const [redirecting, setRedirecting] = useState(false)
   const [newAddress, setNewAddress] = useState<CreateAddressDto>({
     alias: '',
@@ -76,9 +79,42 @@ export function CheckoutPage() {
     })
   }
 
-  const handleConfirmOrder = () => {
+  const handleConfirmOrder = async () => {
     if (!selectedPaymentId) return
     if (shippingOption === 'delivery' && !selectedAddressId) return
+
+    // ── Validar stock actual de cada producto ────────────────
+    setStockErrors(null)
+    setIsValidatingStock(true)
+
+    const errors: { name: string; available: number; requested: number }[] = []
+    for (const item of items) {
+      try {
+        const product = await getProductById(item.id)
+        if (item.quantity > product.available_stock) {
+          errors.push({
+            name: product.name,
+            available: product.available_stock,
+            requested: item.quantity,
+          })
+        }
+      } catch {
+        // Si falla la consulta, dejamos pasar
+      }
+    }
+
+    setIsValidatingStock(false)
+
+    if (errors.length > 0) {
+      setStockErrors(errors)
+      for (const err of errors) {
+        toast.error(
+          'Stock insuficiente',
+          `${err.name}: pediste ${err.requested}, disponible ${err.available}`,
+        )
+      }
+      return
+    }
 
     const selectedMethod = paymentMethods?.find(p => p.id === selectedPaymentId)
     const isMercadoPago = selectedMethod?.nombre?.toLowerCase().includes('mercadopago') ||
@@ -124,6 +160,13 @@ export function CheckoutPage() {
 
   return (
     <div className="max-w-3xl mx-auto px-4 py-8">
+      <Link
+        to="/cart"
+        className="inline-flex items-center gap-1.5 text-sm text-on-surface-variant hover:text-on-surface transition-colors mb-4"
+      >
+        <ArrowLeft size={16} />
+        Volver al carrito
+      </Link>
       <h1 className="text-headline-md text-on-surface mb-6">Checkout</h1>
 
       <div className="space-y-6">
@@ -283,13 +326,13 @@ export function CheckoutPage() {
 
         <button
           onClick={handleConfirmOrder}
-          disabled={!selectedPaymentId || (shippingOption === 'delivery' && !selectedAddressId) || createOrderMutation.isPending || redirecting}
+          disabled={!selectedPaymentId || (shippingOption === 'delivery' && !selectedAddressId) || createOrderMutation.isPending || isValidatingStock || redirecting}
           className="w-full bg-rb-red text-white font-sans font-bold uppercase tracking-wider py-4 rounded-sm hover:bg-rb-red-hover transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-red flex items-center justify-center gap-2"
         >
-          {createOrderMutation.isPending || redirecting ? (
+          {createOrderMutation.isPending || isValidatingStock || redirecting ? (
             <Loader2 className="w-5 h-5 animate-spin" />
           ) : null}
-          {redirecting ? 'Redirigiendo a MercadoPago...' : createOrderMutation.isPending ? 'Procesando...' : 'Confirmar pedido'}
+          {isValidatingStock ? 'Validando stock...' : redirecting ? 'Redirigiendo a MercadoPago...' : createOrderMutation.isPending ? 'Procesando...' : 'Confirmar pedido'}
         </button>
 
         {createOrderMutation.isError && (
