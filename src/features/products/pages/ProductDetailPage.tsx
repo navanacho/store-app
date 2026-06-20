@@ -3,6 +3,7 @@ import { ArrowLeft, ShoppingCart, Clock, AlertCircle } from 'lucide-react'
 import { useProductById } from '../hooks/useProducts'
 import { useCartStore } from '@/features/cart/store/cartStore'
 import { LoadingSpinner } from '@/shared/components/LoadingSpinner'
+import { isProductAvailable } from '../types'
 
 export function ProductDetailPage() {
   const { id } = useParams<{ id: string }>()
@@ -63,13 +64,28 @@ export function ProductDetailPage() {
           )}
           <div className="flex items-center justify-between pt-4 mt-auto border-t border-outline-variant">
             <span className="text-3xl font-bold text-rb-red">${Number(product.base_price).toFixed(2)}</span>
-            <button
-              onClick={() => addItem({ id: product.id, name: product.name, price: Number(product.base_price), image_url: product.image_urls?.[0], quantity: 1 })}
-              className="flex items-center gap-2 bg-rb-red text-white font-sans font-bold uppercase tracking-wider px-6 py-3 rounded-sm hover:bg-rb-red-hover transition-colors shadow-red"
-            >
-              <ShoppingCart className="w-5 h-5" />
-              Agregar al carrito
-            </button>
+            <div className="flex items-center gap-3">
+              {!isProductAvailable(product) && (
+                <span className="text-sm text-on-surface-variant/70 font-semibold">
+                  Producto agotado
+                </span>
+              )}
+              <button
+                onClick={() => {
+                  if (!isProductAvailable(product)) return
+                  addItem({ id: product.id, name: product.name, price: Number(product.base_price), image_url: product.image_urls?.[0], quantity: 1 })
+                }}
+                disabled={!isProductAvailable(product)}
+                className={`flex items-center gap-2 font-sans font-bold uppercase tracking-wider px-6 py-3 rounded-sm transition-colors ${
+                  isProductAvailable(product)
+                    ? 'bg-rb-red text-white hover:bg-rb-red-hover shadow-red'
+                    : 'bg-outline-variant text-on-surface-variant/50 cursor-not-allowed'
+                }`}
+              >
+                <ShoppingCart className="w-5 h-5" />
+                {isProductAvailable(product) ? 'Agregar al carrito' : 'Sin stock'}
+              </button>
+            </div>
           </div>
         </div>
       </div>

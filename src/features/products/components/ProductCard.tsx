@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom'
 import { ShoppingCart } from 'lucide-react'
+import { isProductAvailable } from '../types'
 import type { Product } from '../types'
 
 interface ProductCardProps {
@@ -27,11 +28,23 @@ export function ProductCard({ product, onAddToCart }: ProductCardProps) {
           <span className="text-xs text-on-surface-variant/60 uppercase tracking-wider">{product.categories[0].name}</span>
         )}
         <div className="mt-auto flex items-center justify-between pt-2">
-          <span className="font-bold text-lg text-rb-red">${Number(product.base_price).toFixed(2)}</span>
+          <div className="flex flex-col">
+            <span className="font-bold text-lg text-rb-red">${Number(product.base_price).toFixed(2)}</span>
+            {!isProductAvailable(product) && (
+              <span className="text-[10px] text-on-surface-variant/60 font-semibold uppercase tracking-wider">
+                Sin stock
+              </span>
+            )}
+          </div>
           <button
-            onClick={(e) => { e.preventDefault(); onAddToCart(product) }}
-            className="bg-rb-red text-white p-2 rounded-sm hover:bg-rb-red-hover transition-colors"
-            aria-label="Agregar al carrito"
+            onClick={(e) => { e.preventDefault(); if (isProductAvailable(product)) onAddToCart(product) }}
+            disabled={!isProductAvailable(product)}
+            className={`p-2 rounded-sm transition-colors ${
+              isProductAvailable(product)
+                ? 'bg-rb-red text-white hover:bg-rb-red-hover'
+                : 'bg-outline-variant text-on-surface-variant/30 cursor-not-allowed'
+            }`}
+            aria-label={isProductAvailable(product) ? 'Agregar al carrito' : 'Producto sin stock'}
           >
             <ShoppingCart className="w-4 h-4" />
           </button>

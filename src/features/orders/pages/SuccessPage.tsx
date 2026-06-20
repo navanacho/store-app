@@ -1,67 +1,53 @@
-import { useEffect, useState } from 'react'
-import { useParams, useSearchParams, Link } from 'react-router-dom'
+import { useEffect, useRef } from 'react'
+import { useSearchParams, useNavigate } from 'react-router-dom'
 import { apiClient } from '@/shared/lib/axios'
-import { ButtonGeneric } from '@/shared/components/ButtonGeneric'
-import { CheckCircle, XCircle, Loader2 } from 'lucide-react'
+import { useCartStore } from '@/features/cart/store/cartStore'
+import { LoadingSpinner } from '@/shared/components/LoadingSpinner'
+
+interface ConfirmarPagoResponse {
+  estado: string
+  pedido_id: number | null
+}
 
 export function SuccessPage() {
-  const { id } = useParams<{ id: string }>()
   const [searchParams] = useSearchParams()
-  const [estado, setEstado] = useState<'verificando' | 'approved' | 'rejected'>('verificando')
-  const [error, setError] = useState<string | null>(null)
+  const navigate = useNavigate()
+  const clearCart = useCartStore(s => s.clearCart)
+  const processed = useRef(false)
 
   useEffect(() => {
-    const paymentId = searchParams.get('payment_id')
-    if (!id) return
+    if (processed.current) return
+    processed.current = true
 
-    apiClient.post('/pagos/confirm', {
-      pedido_id: Number(id),
-      payment_id: paymentId ? Number(paymentId) : undefined,
+    const paymentId = searchParams.get('payment_id')
+    if (!paymentId) {
+      // Sin payment_id — no podemos confirmar
+      navigate('/cart', { replace: true })
+      return
+    }
+
+    apiClient.post<ConfirmarPagoResponse>('/pagos/confirm', {
+      payment_id: Number(paymentId),
     })
       .then(res => {
-        setEstado(res.data.estado === 'approved' ? 'approved' : 'rejected')
+        if (res.data.estado === 'approved' && res.data.pedido_id) {
+          clearCart()
+          navigate(`/orders/${res.data.pedido_id}`, { replace: true })
+        } else {
+          // Pago no aprobado → redirigir al carrito
+          navigate('/cart', { replace: true })
+        }
       })
-      .catch(err => {
-        setError(err?.response?.data?.detail || 'Error al verificar el pago')
-        setEstado('rejected')
+      .catch(() => {
+        // Si falla la verificación, intentamos ir al carrito
+        navigate('/cart', { replace: true })
       })
-  }, [id, searchParams])
+  }, [searchParams, navigate, clearCart])
 
+  // Spinner fugaz mientras se verifica
   return (
-    <div className="max-w-lg mx-auto mt-10 p-6 text-center">
-      {estado === 'verificando' && (
-        <>
-          <Loader2 className="w-16 h-16 mx-auto mb-4 animate-spin text-blue-500" />
-          <h1 className="text-2xl font-bold mb-2">Verificando pago...</h1>
-          <p className="text-gray-600">Estamos confirmando tu pago con MercadoPago</p>
-        </>
-      )}
-
-      {estado === 'approved' && (
-        <>
-          <CheckCircle className="w-16 h-16 mx-auto mb-4 text-green-500" />
-          <h1 className="text-2xl font-bold mb-2">¡Pago aprobado!</h1>
-          <p className="text-gray-600 mb-6">
-            Tu pedido #{id} fue confirmado. Ya lo estamos preparando.
-          </p>
-          <Link to="/products">
-            <ButtonGeneric info="Seguir comprando" />
-          </Link>
-        </>
-      )}
-
-      {estado === 'rejected' && (
-        <>
-          <XCircle className="w-16 h-16 mx-auto mb-4 text-red-500" />
-          <h1 className="text-2xl font-bold mb-2">Pago no procesado</h1>
-          <p className="text-gray-600 mb-6">
-            {error || 'El pago no pudo ser procesado. Podés intentar de nuevo desde el detalle del pedido.'}
-          </p>
-          <Link to={`/orders/${id}`}>
-            <ButtonGeneric info="Ver pedido" />
-          </Link>
-        </>
-      )}
+    <div className="flex items-center justify-center min-h-[50vh]">
+      <LoadingSpinner />
     </div>
   )
 }

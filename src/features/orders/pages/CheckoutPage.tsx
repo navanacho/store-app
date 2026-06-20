@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
-import { ShoppingBag, Loader2, AlertTriangle, ArrowLeft } from 'lucide-react'
+import { ShoppingBag, Loader2, ArrowLeft } from 'lucide-react'
 import { useCartStore } from '@/features/cart/store/cartStore'
 import { useCreateOrder } from '../hooks/useOrders'
 import { useShippingConfig } from '../hooks/useShippingConfig'
@@ -23,6 +23,18 @@ interface ListResponse<T> {
   total: number
 }
 
+interface CrearPreferenciaRequest {
+  detalles: { producto_id: number; cantidad: number }[]
+  direccion_entrega_id: number
+  forma_pago_id: number
+  tipo_envio: string
+}
+
+interface CrearPreferenciaResponse {
+  init_point: string
+  preference_id: string
+}
+
 export function CheckoutPage() {
   const navigate = useNavigate()
   const { items, clearCart, shippingOption } = useCartStore()
@@ -32,8 +44,8 @@ export function CheckoutPage() {
   const createAddressMutation = useCreateAddress()
 
   const createPreferenceMutation = useMutation({
-    mutationFn: (pedidoId: number) =>
-      apiClient.post('/pagos/create-preference', { pedido_id: pedidoId }).then(r => r.data),
+    mutationFn: (data: CrearPreferenciaRequest) =>
+      apiClient.post<CrearPreferenciaResponse>('/pagos/create-preference', data).then(r => r.data),
     onError: (err) => {
       toast.error('Error al conectar con MercadoPago', extractErrorMessage(err))
       setRedirecting(false)
@@ -51,9 +63,7 @@ export function CheckoutPage() {
   const [selectedAddressId, setSelectedAddressId] = useState<number | null>(null)
   const [selectedPaymentId, setSelectedPaymentId] = useState<number | null>(null)
   const [showAddressForm, setShowAddressForm] = useState(false)
-  const [isSubmitting, setIsSubmitting] = useState(false)
   const [isValidatingStock, setIsValidatingStock] = useState(false)
-  const [stockErrors, setStockErrors] = useState<{ name: string; available: number; requested: number }[] | null>(null)
   const [redirecting, setRedirecting] = useState(false)
   const [newAddress, setNewAddress] = useState<CreateAddressDto>({
     alias: '',
@@ -84,7 +94,6 @@ export function CheckoutPage() {
     if (shippingOption === 'delivery' && !selectedAddressId) return
 
     // ── Validar stock actual de cada producto ────────────────
-    setStockErrors(null)
     setIsValidatingStock(true)
 
     const errors: { name: string; available: number; requested: number }[] = []
@@ -106,7 +115,6 @@ export function CheckoutPage() {
     setIsValidatingStock(false)
 
     if (errors.length > 0) {
-      setStockErrors(errors)
       for (const err of errors) {
         toast.error(
           'Stock insuficiente',
@@ -120,32 +128,41 @@ export function CheckoutPage() {
     const isMercadoPago = selectedMethod?.nombre?.toLowerCase().includes('mercadopago') ||
                           selectedMethod?.nombre?.toLowerCase().includes('mercado pago')
 
-    setIsSubmitting(true)
-    createOrderMutation.mutate(
-      {
-        direccion_entrega_id: shippingOption === 'delivery' ? selectedAddressId! : (selectedAddressId ?? 1),
-        forma_pago_id: selectedPaymentId,
-        tipo_envio: shippingOption,
-        detalles: items.map((i) => ({ producto_id: i.id, cantidad: i.quantity })),
-      },
-      {
-        onSuccess: (order) => {
-          clearCart()
-          if (isMercadoPago) {
-            setRedirecting(true)
-            createPreferenceMutation.mutate(order.id, {
-              onSuccess: (data) => {
-                if (data.init_point) {
-                  window.location.href = data.init_point
-                }
-              },
-            })
-          } else {
-            navigate(`/orders/${order.id}`)
-          }
+    if (isMercadoPago) {
+      // ── FLUJO MP: crear preferencia directa (SIN crear pedido) ──
+      setRedirecting(true)
+      createPreferenceMutation.mutate(
+        {
+          detalles: items.map((i) => ({ producto_id: i.id, cantidad: i.quantity })),
+          direccion_entrega_id: shippingOption === 'delivery' ? selectedAddressId! : (selectedAddressId ?? 1),
+          forma_pago_id: selectedPaymentId,
+          tipo_envio: shippingOption,
         },
-      },
-    )
+        {
+          onSuccess: (data) => {
+            if (data.init_point) {
+              window.location.href = data.init_point
+            }
+          },
+        },
+      )
+    } else {
+      // ── FLUJO NO-MP: crear pedido (Efectivo/Tarjeta) ──
+      createOrderMutation.mutate(
+        {
+          direccion_entrega_id: shippingOption === 'delivery' ? selectedAddressId! : (selectedAddressId ?? 1),
+          forma_pago_id: selectedPaymentId,
+          tipo_envio: shippingOption,
+          detalles: items.map((i) => ({ producto_id: i.id, cantidad: i.quantity })),
+        },
+        {
+          onSuccess: (order) => {
+            clearCart()
+            navigate(`/orders/${order.id}`)
+          },
+        },
+      )
+    }
   }
 
   if (items.length === 0) {

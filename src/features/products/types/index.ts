@@ -23,6 +23,19 @@ export interface ProductFilters {
   max_price?: number
 }
 
+/**
+ * Determina si un producto se puede comprar (tiene stock y está disponible).
+ */
+export function isProductAvailable(product: Product): boolean {
+  if (product.available === false) return false
+  // Con receta → available_stock (stock fabricable desde ingredientes)
+  if (product.ingredients && product.ingredients.length > 0) {
+    return product.available_stock > 0
+  }
+  // Sin receta → stock_quantity físico
+  return (product.stock_quantity ?? 0) > 0
+}
+
 export interface Category {
   id: number
   parent_id?: number

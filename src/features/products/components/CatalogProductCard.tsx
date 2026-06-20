@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom'
 import { ShoppingCart, Clock, ChefHat } from 'lucide-react'
+import { isProductAvailable } from '../types'
 import type { Product } from '../types'
 
 interface CatalogProductCardProps {
@@ -62,17 +63,27 @@ export function CatalogProductCard({ product, onAddToCart }: CatalogProductCardP
 
         {/* Price + CTA */}
         <div className="flex items-center justify-between mt-auto pt-2">
-          <div>
+          <div className="flex items-center gap-2">
             <span className="text-2xl font-bold text-rb-red">
               ${Number(product.base_price).toFixed(2)}
             </span>
+            {!isProductAvailable(product) && (
+              <span className="text-xs bg-surface-container-high text-on-surface-variant px-2 py-0.5 rounded-sm font-semibold uppercase tracking-wider">
+                Sin stock
+              </span>
+            )}
           </div>
           <button
             onClick={() => onAddToCart(product)}
-            className="flex items-center gap-2 bg-rb-red text-white text-sm font-sans font-bold uppercase tracking-wider px-5 py-2.5 rounded-sm hover:bg-rb-red-hover transition-colors shadow-red"
+            disabled={!isProductAvailable(product)}
+            className={`flex items-center gap-2 text-sm font-sans font-bold uppercase tracking-wider px-5 py-2.5 rounded-sm transition-colors ${
+              isProductAvailable(product)
+                ? 'bg-rb-red text-white hover:bg-rb-red-hover shadow-red'
+                : 'bg-outline-variant text-on-surface-variant/50 cursor-not-allowed'
+            }`}
           >
             <ShoppingCart className="w-4 h-4" />
-            Agregar
+            {isProductAvailable(product) ? 'Agregar' : 'Sin stock'}
           </button>
         </div>
       </div>

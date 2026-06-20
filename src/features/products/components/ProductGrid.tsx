@@ -3,6 +3,7 @@ import { useCartStore } from '@/features/cart/store/cartStore'
 import { ProductCard } from './ProductCard'
 import { LoadingSpinner } from '@/shared/components/LoadingSpinner'
 import type { ProductFilters } from '../types'
+import { isProductAvailable } from '../types'
 import type { Product } from '../types'
 
 interface ProductGridProps {
@@ -14,6 +15,7 @@ export function ProductGrid({ filters }: ProductGridProps) {
   const addItem = useCartStore((s) => s.addItem)
 
   const handleAddToCart = (product: Product) => {
+    if (!isProductAvailable(product)) return
     addItem({
       id: product.id,
       name: product.name,
